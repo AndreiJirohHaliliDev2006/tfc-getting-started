@@ -2,10 +2,10 @@
 # For more information, see https://www.terraform.io/docs/backends/types/remote.html
 terraform {
   backend "remote" {
-    organization = "{{ORGANIZATION_NAME}}"
+    organization = "ajhalili2006"
 
     workspaces {
-      name = "{{WORKSPACE_NAME}}"
+      name = "tfc-getting-started"
     }
   }
 
