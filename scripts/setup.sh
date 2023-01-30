@@ -1,4 +1,7 @@
-#! /bin/bash
+#!/usr/bin/env bash
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
 set -euo pipefail
 
 info() {
@@ -47,10 +50,20 @@ for tool in "${req_tools[@]}"; do
   fi
 done
 
-# Check for required Terraform version
-if ! terraform version -json | jq -r '.terraform_version' &> /dev/null; then
+# Get the minimum required version of Terraform
+minimumTerraformMajorVersion=0
+minimumTerraformMinorVersion=14
+minimumTerraformVersion=$(($minimumTerraformMajorVersion * 1000 + $minimumTerraformMinorVersion))
+
+# Get the current version of Terraform
+installedTerraformMajorVersion=$(terraform version -json | jq -r '.terraform_version' | cut -d '.' -f 1)
+installedTerraformMinorVersion=$(terraform version -json | jq -r '.terraform_version' | cut -d '.' -f 2)
+installedTerraformVersion=$(($installedTerraformMajorVersion * 1000 + $installedTerraformMinorVersion))
+
+# Check we meet the minimum required version
+if [ $installedTerraformVersion -lt $minimumTerraformVersion ]; then
   echo
-  fail "Terraform 0.13 or later is required for this setup script!"
+  fail "Terraform $minimumTerraformMajorVersion.$minimumTerraformMinorVersion.x or later is required for this setup script!"
   echo "You are currently running:"
   terraform version
   exit 1
@@ -69,7 +82,13 @@ TERRAFORM_VERSION=$(terraform version -json | jq -r '.terraform_version')
 # and you hopefully do not need this Getting Started project if you're using one
 # already!
 CREDENTIALS_FILE="$HOME/.terraform.d/credentials.tfrc.json"
-TOKEN=$(jq -j --arg h "$HOST" '.credentials[$h].token' $CREDENTIALS_FILE)
+
+# Credentials are located in App/Data/Roaming on Windows
+if [[ "$OSTYPE" =~ ^msys || "$OSTYPE" =~ ^cygwin || "$OSTYPE" =~ ^win32  ]]; then
+    CREDENTIALS_FILE="$APPDATA/terraform.d/credentials.tfrc.json"
+fi
+
+TOKEN=$(jq -j --arg h "$HOST" '.credentials[$h].token' "$CREDENTIALS_FILE")
 if [[ ! -f $CREDENTIALS_FILE || $TOKEN == null ]]; then
   fail "We couldn't find a token in the Terraform credentials file at $CREDENTIALS_FILE."
   fail "Please run 'terraform login', then run this setup script again."
@@ -127,15 +146,15 @@ REQUEST_BODY
 }
 
 response=$(setup)
+err=$(echo $response | jq -r '.errors')
 
-if [[ $(echo $response | jq -r '.errors') != null ]]; then
-  fail "An unknown error occurred: ${response}"
-  exit 1
-fi
-
-api_error=$(echo $response | jq -r '.error')
-if [[ $api_error != null ]]; then
-  fail "\n${api_error}"
+if [[ $err != null ]]; then
+  err_msg=$(echo $err | jq -r '.[0].detail')
+  if [[ $err_msg != null ]]; then
+    fail "An error occurred: ${err_msg}"
+  else 
+    fail "An unknown error occurred: ${err}"
+  fi
   exit 1
 fi
 
